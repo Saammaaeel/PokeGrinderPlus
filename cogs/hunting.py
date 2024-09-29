@@ -1,17 +1,9 @@
 import asyncio
 from time import time
 from typing import Dict
-from random import randint
+from random import randint, uniform
 
-from discord import (
-    Message,
-    SlashCommand,
-    UserCommand,
-    MessageCommand,
-    SubCommand,
-    InvalidData,
-)
-
+from discord import Message, SlashCommand, UserCommand, MessageCommand, SubCommand, InvalidData
 from discord.ext import commands
 from cogs.startup import Config
 
@@ -22,7 +14,6 @@ auto_buy_sub_strings = {
     "Ultraballs: 0": "ub",
     "Masterballs: 0": "mb",
 }
-
 
 async def auto_buy(
     bot: commands.Bot,
@@ -45,7 +36,6 @@ async def auto_buy(
         bot.auto_buy_queued = False
         await task
 
-
 class Hunting(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -66,7 +56,7 @@ class Hunting(commands.Cog):
         if "Please wait" in message.content:
             await asyncio.sleep(self.config.retry_cooldown)
             await asyncio.sleep(randint(0, self.config.suspicion_avoidance) / 1000)
-            await self.bot.hunting_channel_commands["pokemon"]()
+            await self.randomized_pokemon_command()
             return
 
         if not message.embeds:
@@ -82,7 +72,6 @@ class Hunting(commands.Cog):
             return
 
         self.bot.hunting_status = "Grinding..."
-
         self.bot.encounters += 1
         self.bot.last_hunt = time()
         await self.bot.log()
@@ -90,7 +79,6 @@ class Hunting(commands.Cog):
         name = message.embeds[0].description.split("**")[3]
         if name in self.config.exception_balls:
             ball = self.config.exception_balls[name]
-
         else:
             ball = [
                 self.config.balls[rarity]
@@ -98,13 +86,14 @@ class Hunting(commands.Cog):
                 if rarity in message.embeds[0].footer.text
             ][-1]
 
+        if ball == "mb" and self.config.auto_buy["mb"] == 0:
+            ball = "ub"  # Fallback to Ultra Ball if no Master Ball available
         balls = ["mb", "prb", "ub", "gb", "pb"]
-        balls = balls[balls.index(ball) :]
+        balls = balls[balls.index(ball):]
 
         children = [
             child for component in message.components for child in component.children
         ]
-
         buttons = [
             button for button in children for ball in balls if button.custom_id == ball
         ]
@@ -115,7 +104,6 @@ class Hunting(commands.Cog):
         try:
             await asyncio.sleep(randint(0, self.config.suspicion_avoidance) / 1000)
             await buttons[-1].click()
-
         except InvalidData:
             pass
 
@@ -137,12 +125,8 @@ class Hunting(commands.Cog):
         if "caught" in after.embeds[0].description:
             self.bot.catches += 1
             self.bot.coins_earned += int(
-                after.embeds[0]
-                .footer.text.split("You earned ")[1]
-                .split(" ")[0]
-                .replace(",", "")
+                after.embeds[0].footer.text.split("You earned ")[1].split(" ")[0].replace(",", "")
             )
-
             await self.bot.log()
 
             if "has been added to your Pokedex" not in after.embeds[0].description:
@@ -156,7 +140,6 @@ class Hunting(commands.Cog):
                 await asyncio.sleep(
                     2 + randint(0, self.config.suspicion_avoidance) / 1000
                 )
-
                 tasks.append(
                     asyncio.create_task(
                         self.bot.hunting_channel_commands["release duplicates"]()
@@ -171,13 +154,16 @@ class Hunting(commands.Cog):
 
         tasks.append(
             asyncio.create_task(
-                auto_buy(
-                    self.bot, self.config, self.bot.hunting_channel_commands, after
-                )
+                auto_buy(self.bot, self.config, self.bot.hunting_channel_commands, after)
             )
         )
 
         await asyncio.sleep(self.config.hunting_cooldown)
         await asyncio.sleep(randint(0, self.config.suspicion_avoidance) / 1000)
-        await self.bot.hunting_channel_commands["pokemon"]()
+        await self.randomized_pokemon_command()
         [await task for task in tasks]
+
+    async def randomized_pokemon_command(self) -> None:
+        delay = uniform(3, 5)
+        await asyncio.sleep(delay)
+        await self.bot.hunting_channel_commands["pokemon"]()
