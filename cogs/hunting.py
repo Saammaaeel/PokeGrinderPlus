@@ -77,14 +77,27 @@ class Hunting(commands.Cog):
         await self.bot.log()
 
         name = message.embeds[0].description.split("**")[3]
-        if name in self.config.exception_balls:
-            ball = self.config.exception_balls[name]
+
+        # Check for Legendary Pokémon and choose ball based on emoji presence
+        if "Legendary" in message.embeds[0].footer.text:
+            # Determine if the Legendary Pokémon has been caught or not
+            if ":masterball_unlocked:" in message.content:
+                ball = "ub"  # Use Ultraball for already caught Pokémon
+            elif ":masterball_locked:" in message.content:
+                ball = "mb"  # Use Masterball for uncaught Pokémon
+            else:
+                ball = "ub"  # Default to Ultraball if detection fails
         else:
-            ball = [
-                self.config.balls[rarity]
-                for rarity in list(self.config.balls.keys())
-                if rarity in message.embeds[0].footer.text
-            ][-1]
+            # Use the configured ball for other Pokémon based on rarity
+            if name in self.config.exception_balls:
+                ball = self.config.exception_balls[name]
+            else:
+                ball = [
+                    self.config.balls[rarity]
+                    for rarity in list(self.config.balls.keys())
+                    if rarity in message.embeds[0].footer.text
+                ][-1]
+
 
         if ball == "mb" and self.config.auto_buy["mb"] == 0:
             ball = "ub"  # Fallback to Ultra Ball if no Master Ball available
@@ -160,10 +173,28 @@ class Hunting(commands.Cog):
 
         await asyncio.sleep(self.config.hunting_cooldown)
         await asyncio.sleep(randint(0, self.config.suspicion_avoidance) / 1000)
-        await self.randomized_pokemon_command()
+        await self.randomized_pokemon_command()  # Call the method
         [await task for task in tasks]
 
     async def randomized_pokemon_command(self) -> None:
-        delay = uniform(3, 5)
-        await asyncio.sleep(delay)
-        await self.bot.hunting_channel_commands["pokemon"]()
+        """
+        Randomly sends a 'pokemon' command to the bot with efficient delay and improved error handling.
+        """
+        try:
+            # Adding a dynamic delay based on suspicion avoidance and encounter activity
+            delay = uniform(3, 5) + randint(0, self.config.suspicion_avoidance) / 1000
+            await asyncio.sleep(delay)
+
+            # Wrap in a timeout in case Discord's response takes too long
+            try:
+                await asyncio.wait_for(self.bot.hunting_channel_commands["pokemon"](), timeout=10)
+            except asyncio.TimeoutError:
+                # Handle if the command takes too long to respond
+                print("Command timed out, retrying after a cooldown.")
+                await asyncio.sleep(self.config.retry_cooldown)  # Adjust cooldown if necessary
+                await asyncio.wait_for(self.bot.hunting_channel_commands["pokemon"](), timeout=10)
+        
+        except Exception as e:
+            # Log any other errors encountered
+            print(f"An error occurred in the pokemon command: {e}")
+            await self.bot.log()  # Log the error in the bot's system for better tracking
